@@ -1,36 +1,56 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-// Keep track of active chats globally to avoid notifying for open chats
 let activeChatPath: string | null = null;
 
 export const setActiveChatPath = (path: string | null) => {
   activeChatPath = path;
 };
 
+let swReg: ServiceWorkerRegistration | null = null;
+
+export async function ensureServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  if (swReg) return swReg;
+  try {
+    const base = (import.meta as any).env?.BASE_URL || "/";
+    swReg = await navigator.serviceWorker.register(`${base}sw.js`, {
+      scope: base,
+    });
+    return swReg;
+  } catch (e) {
+    console.warn("SW registration failed", e);
+    return null;
+  }
+}
+
 export function useNotifications() {
   const [permission, setPermission] = useState<NotificationPermission>(
-    "default"
+    typeof Notification !== "undefined" ? Notification.permission : "default",
   );
 
   useEffect(() => {
     if ("Notification" in window) {
       setPermission(Notification.permission);
     }
+    ensureServiceWorker();
   }, []);
 
   const requestPermission = async () => {
     if (!("Notification" in window)) return false;
     const result = await Notification.requestPermission();
     setPermission(result);
+    if (result === "granted") {
+      await ensureServiceWorker();
+    }
     return result === "granted";
   };
 
   const notify = (
     title: string,
-    options?: NotificationOptions & { chatPath?: string }
+    options?: NotificationOptions & { chatPath?: string },
   ) => {
-    // If the chat is currently active and window is focused, don't notify
+    // If chat is open and tab focused, skip
     if (
       options?.chatPath &&
       activeChatPath === options.chatPath &&
@@ -40,53 +60,63 @@ export function useNotifications() {
     }
 
     // In-app toast
-    toast(title, {
-      description: options?.body,
-    });
+    toast(title, { description: options?.body });
 
-    // Audio ping
-    try {
-      const audioCtx = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-      oscillator.frequency.exponentialRampToValueAtTime(
-        440,
-        audioCtx.currentTime + 0.1
-      ); // Drop to A4
-
-      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.05);
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.001,
-        audioCtx.currentTime + 0.3
-      );
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.3);
-    } catch (e) {
-      console.warn("Audio notification failed", e);
+    // Audio ping (only if focused; background gets system sound)
+    if (!document.hidden) {
+      try {
+        const audioCtx = new (window.AudioContext ||
+          (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(
+          440,
+          audioCtx.currentTime + 0.1,
+        );
+        gain.gain.setValueAtTime(0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.18, audioCtx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(
+          0.001,
+          audioCtx.currentTime + 0.3,
+        );
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } catch {}
     }
 
-    // Browser notification
-    if (permission === "granted" && (document.hidden || !document.hasFocus())) {
-      try {
-        new Notification(title, {
-          icon: "/logo.jpg",
-          badge: "/logo.jpg",
-          dir: "rtl",
-          lang: "ar",
-          ...options,
-        });
-      } catch (e) {
-        console.warn("Browser notification failed", e);
-      }
+    // System notification when tab is hidden / blurred — via SW for
+    // background-tab reliability across browsers.
+    if (
+      permission === "granted" &&
+      (document.hidden || !document.hasFocus())
+    ) {
+      ensureServiceWorker().then((reg) => {
+        if (reg && reg.active) {
+          reg.active.postMessage({
+            type: "SHOW_NOTIFICATION",
+            payload: {
+              title,
+              body: options?.body,
+              tag: options?.chatPath || "zohour-msg",
+              url: "/",
+            },
+          });
+        } else {
+          try {
+            new Notification(title, {
+              icon: "/logo.jpg",
+              badge: "/logo.jpg",
+              dir: "rtl",
+              lang: "ar",
+              ...options,
+            });
+          } catch {}
+        }
+      });
     }
   };
 

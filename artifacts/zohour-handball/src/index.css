@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -46,45 +46,48 @@
   --radius-2xl: calc(var(--radius) + 8px);
 }
 
+/* ==============================
+   MINIMAL PALETTE
+   - Deep Navy (#0A192F) as the single brand color
+   - Off-white surfaces, subtle grays
+   - One soft accent (warm sand) used sparingly
+   ============================== */
+
 /* LIGHT MODE */
 :root {
-  /* Deep Navy Dominant: #0A192F ≈ 216 65% 11% */
-  /* Warm Gold/Orange Accent: #F59E0B ≈ 24 95% 50% */
-  /* Cool Teal Secondary: #0D9488 ≈ 160 84% 39% */
-  
-  --background: 40 20% 98%; /* soft cream/off-white */
-  --foreground: 216 65% 11%; /* deep navy text */
-  --border: 214 20% 90%;
-  
+  --background: 210 33% 98%;
+  --foreground: 216 65% 11%;
+  --border: 216 16% 90%;
+
   --card: 0 0% 100%;
   --card-foreground: 216 65% 11%;
-  --card-border: 214 20% 90%;
-  
+  --card-border: 216 16% 90%;
+
   --popover: 0 0% 100%;
   --popover-foreground: 216 65% 11%;
-  --popover-border: 214 20% 90%;
-  
-  --primary: 216 65% 11%; /* Deep Navy */
-  --primary-foreground: 40 20% 98%; /* Cream text on navy */
-  
-  --secondary: 160 84% 39%; /* Teal */
-  --secondary-foreground: 0 0% 100%;
-  
-  --muted: 214 20% 94%;
-  --muted-foreground: 215 16% 47%;
-  
-  --accent: 24 95% 50%; /* Orange/Gold */
-  --accent-foreground: 0 0% 100%;
-  
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --input: 214 20% 90%;
-  --ring: 216 65% 11%;
-  
-  --radius: 12px;
+  --popover-border: 216 16% 90%;
 
-  --chat-bg-own: 216 65% 11%;
+  --primary: 216 65% 13%;
+  --primary-foreground: 210 33% 98%;
+
+  --secondary: 216 30% 25%;
+  --secondary-foreground: 0 0% 100%;
+
+  --muted: 216 16% 95%;
+  --muted-foreground: 216 12% 45%;
+
+  --accent: 216 65% 13%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 216 16% 90%;
+  --ring: 216 65% 13%;
+
+  --radius: 14px;
+
+  --chat-bg-own: 216 65% 13%;
   --chat-text-own: 0 0% 100%;
   --chat-bg-other: 0 0% 100%;
   --chat-text-other: 216 65% 11%;
@@ -92,40 +95,40 @@
 
 /* DARK MODE */
 .dark {
-  --background: 216 65% 8%; /* Very deep navy/almost black */
-  --foreground: 40 20% 98%; /* Soft cream text */
-  --border: 216 30% 18%;
-  
-  --card: 216 50% 11%;
-  --card-foreground: 40 20% 98%;
-  --card-border: 216 30% 18%;
-  
-  --popover: 216 50% 11%;
-  --popover-foreground: 40 20% 98%;
-  --popover-border: 216 30% 18%;
-  
-  --primary: 40 20% 98%; /* Cream for primary buttons in dark mode for contrast */
-  --primary-foreground: 216 65% 11%; /* Navy text on cream buttons */
-  
-  --secondary: 160 84% 39%; /* Teal */
-  --secondary-foreground: 0 0% 100%;
-  
-  --muted: 216 30% 18%;
-  --muted-foreground: 215 20% 65%;
-  
-  --accent: 24 95% 50%; /* Orange/Gold */
-  --accent-foreground: 0 0% 100%;
-  
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 0 0% 100%;
-  
-  --input: 216 30% 18%;
-  --ring: 40 20% 98%;
+  --background: 216 50% 6%;
+  --foreground: 210 33% 98%;
+  --border: 216 28% 16%;
 
-  --chat-bg-own: 160 84% 39%; /* Teal for own messages in dark mode to stand out from navy */
-  --chat-text-own: 0 0% 100%;
-  --chat-bg-other: 216 30% 18%;
-  --chat-text-other: 40 20% 98%;
+  --card: 216 45% 9%;
+  --card-foreground: 210 33% 98%;
+  --card-border: 216 28% 16%;
+
+  --popover: 216 45% 9%;
+  --popover-foreground: 210 33% 98%;
+  --popover-border: 216 28% 16%;
+
+  --primary: 210 33% 98%;
+  --primary-foreground: 216 65% 11%;
+
+  --secondary: 216 28% 22%;
+  --secondary-foreground: 210 33% 98%;
+
+  --muted: 216 28% 14%;
+  --muted-foreground: 216 12% 65%;
+
+  --accent: 210 33% 98%;
+  --accent-foreground: 216 65% 11%;
+
+  --destructive: 0 70% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --input: 216 28% 16%;
+  --ring: 210 33% 98%;
+
+  --chat-bg-own: 210 33% 98%;
+  --chat-text-own: 216 65% 11%;
+  --chat-bg-other: 216 35% 14%;
+  --chat-text-other: 210 33% 98%;
 }
 
 @layer base {
@@ -134,18 +137,31 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground transition-colors duration-300;
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    overscroll-behavior-y: none;
   }
 }
 
-/* Custom Chat Pattern Background */
+/* Chat dots pattern */
 .chat-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000000' fill-opacity='0.03' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%230A192F' fill-opacity='0.04' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1.5'/%3E%3Ccircle cx='13' cy='13' r='1.5'/%3E%3C/g%3E%3C/svg%3E");
 }
 .dark .chat-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.03' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.04' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1.5'/%3E%3Ccircle cx='13' cy='13' r='1.5'/%3E%3C/g%3E%3C/svg%3E");
 }
 
-/* Glassmorphism utility */
+/* Glass utility */
 .glass {
-  @apply bg-background/80 backdrop-blur-lg border-b border-border/50;
+  @apply bg-background/85 backdrop-blur-xl border-b border-border;
+}
+
+/* Hide native scrollbar in some areas for clean look */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Smooth bottom-tab safe spacing */
+.has-bottom-tabs {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
 }
