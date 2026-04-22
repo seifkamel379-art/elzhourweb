@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { AmbientBackground } from "@/components/ambient-background";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
@@ -23,7 +22,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background relative">
-      <AmbientBackground />
       <header className="sticky top-0 z-40 w-full glass border-b border-border/50">
         <div className="container max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">

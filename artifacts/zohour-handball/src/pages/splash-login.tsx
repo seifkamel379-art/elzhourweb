@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import IntroAnimation from "@/components/intro-animation";
-import { AmbientBackground } from "@/components/ambient-background";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -34,20 +33,11 @@ export default function SplashLogin() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!loading && user && profile) {
-      if (profile.role === "player") setLocation("/player");
-      else if (profile.role === "coach") setLocation("/coach");
-      else setLocation("/select-portal");
-      return;
-    }
-
     if (!loading && !user) {
       const hasSeenSplash = sessionStorage.getItem("hasSeenSplash");
-      if (!hasSeenSplash) {
-        setShowSplash(true);
-      }
+      if (!hasSeenSplash) setShowSplash(true);
     }
-  }, [user, profile, loading, setLocation]);
+  }, [user, loading]);
 
   const handleSplashComplete = () => {
     setShowSplash(false);
@@ -105,7 +95,6 @@ export default function SplashLogin() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center relative overflow-hidden">
-      <AmbientBackground />
       <AnimatePresence mode="wait">
         {showSplash && (
           <IntroAnimation key="intro" onComplete={handleSplashComplete} />

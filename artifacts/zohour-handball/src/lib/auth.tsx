@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useLocation } from "wouter";
 
 interface UserProfile {
@@ -40,94 +40,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [playerData, setPlayerData] = useState<PlayerProfile | null>(null);
+  const [coachName, setCoachName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [location, setLocation] = useLocation();
 
+  // Listen to firebase auth state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
       if (!firebaseUser) {
         setProfile(null);
         setPlayerData(null);
+        setCoachName(null);
         setLoading(false);
-        
-        if (location !== "/" && !location.startsWith("/auth")) {
-          setLocation("/");
-        }
-        return;
       }
+    });
+    return () => unsub();
+  }, []);
 
-      const userRef = doc(db, "users", firebaseUser.uid);
-      const unsubUser = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const userData = docSnap.data() as UserProfile;
-          setProfile(userData);
+  // Listen to user profile, player doc, coach doc
+  useEffect(() => {
+    if (!user) return;
 
-          if (userData.role === "player") {
-            const playerRef = doc(db, "players", firebaseUser.uid);
-            getDoc(playerRef).then((playerSnap) => {
-              if (playerSnap.exists()) {
-                setPlayerData(playerSnap.data() as PlayerProfile);
-              } else {
-                setPlayerData(null);
-                if (location !== "/player-setup") setLocation("/player-setup");
-              }
-              setLoading(false);
-            });
-          } else if (userData.role === "coach") {
-            const coachRef = doc(db, "coaches", firebaseUser.uid);
-            getDoc(coachRef).then((coachSnap) => {
-              if (coachSnap.exists()) {
-                setProfile(prev => prev ? { ...prev, name: coachSnap.data().name } : prev);
-                if (location !== "/coach") setLocation("/coach");
-              } else {
-                if (location !== "/coach-auth") setLocation("/coach-auth");
-              }
-              setPlayerData(null);
-              setLoading(false);
-            });
-          } else {
-            setPlayerData(null);
-            setLoading(false);
-            if (location !== "/select-portal") {
-              setLocation("/select-portal");
-            }
-          }
-        } else {
-          setProfile(null);
-          setLoading(false);
-          if (location !== "/select-portal") {
-            setLocation("/select-portal");
-          }
-        }
-      });
+    const unsubUser = onSnapshot(doc(db, "users", user.uid), (snap) => {
+      if (snap.exists()) {
+        setProfile({ uid: user.uid, ...(snap.data() as any) });
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    }, () => setLoading(false));
 
-      return () => unsubUser();
+    const unsubPlayer = onSnapshot(doc(db, "players", user.uid), (snap) => {
+      setPlayerData(snap.exists() ? (snap.data() as PlayerProfile) : null);
     });
 
-    return () => unsubscribe();
-  }, [location, setLocation]);
+    const unsubCoach = onSnapshot(doc(db, "coaches", user.uid), (snap) => {
+      setCoachName(snap.exists() ? (snap.data() as any).name || null : null);
+    });
 
+    return () => {
+      unsubUser();
+      unsubPlayer();
+      unsubCoach();
+    };
+  }, [user]);
+
+  // Routing logic — single source of truth
   useEffect(() => {
     if (loading) return;
-    
-    if (user && profile) {
-      if (!profile.role && location !== "/select-portal") {
-        setLocation("/select-portal");
-      } else if (profile.role === "player" && !playerData && location !== "/player-setup") {
-        setLocation("/player-setup");
-      } else if (profile.role === "player" && playerData && location === "/") {
-        setLocation("/player");
-      } else if (profile.role === "coach" && profile.name && location === "/") {
-        setLocation("/coach");
-      } else if (profile.role === "coach" && !profile.name && location !== "/coach-auth") {
-        setLocation("/coach-auth");
-      }
+
+    if (!user) {
+      if (location !== "/") setLocation("/");
+      return;
     }
-  }, [user, profile, playerData, loading, location, setLocation]);
+    if (!profile) return;
+
+    const role = profile.role;
+
+    if (!role) {
+      if (location !== "/select-portal") setLocation("/select-portal");
+      return;
+    }
+
+    if (role === "player") {
+      if (!playerData) {
+        if (location !== "/player-setup") setLocation("/player-setup");
+      } else if (location === "/" || location === "/select-portal" || location === "/player-setup") {
+        setLocation("/player");
+      }
+      return;
+    }
+
+    if (role === "coach") {
+      if (!coachName) {
+        if (location !== "/coach-auth") setLocation("/coach-auth");
+      } else if (location === "/" || location === "/select-portal" || location === "/coach-auth") {
+        setLocation("/coach");
+      }
+      return;
+    }
+  }, [user, profile, playerData, coachName, loading, location, setLocation]);
+
+  const enrichedProfile: UserProfile | null = profile
+    ? { ...profile, name: coachName || profile.name }
+    : null;
 
   return (
-    <AuthContext.Provider value={{ user, profile, playerData, loading }}>
+    <AuthContext.Provider value={{ user, profile: enrichedProfile, playerData, loading }}>
       {children}
     </AuthContext.Provider>
   );
