@@ -1,5 +1,5 @@
 /* Firebase Cloud Messaging Service Worker
-   Handles background push notifications. */
+   Handles background push notifications and offline push queue. */
 
 importScripts("https://www.gstatic.com/firebasejs/11.10.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/11.10.0/firebase-messaging-compat.js");
@@ -25,7 +25,7 @@ messaging.onBackgroundMessage((payload) => {
     body,
     icon: "/logo.jpg",
     badge: "/logo.jpg",
-    tag: data.tag || "zohour-msg",
+    tag: data.tag || "zohour-rating",
     data: { url: data.url || "/" },
     lang: "ar",
     dir: "rtl",
@@ -33,23 +33,63 @@ messaging.onBackgroundMessage((payload) => {
   });
 });
 
-// In-page message handler from main app
-self.addEventListener("message", (event) => {
-  const data = event.data || {};
-  if (data.type === "SHOW_NOTIFICATION") {
-    const { title, body, tag, url } = data.payload || {};
-    self.registration.showNotification(title || "إشعار جديد", {
-      body: body || "",
-      icon: "/logo.jpg",
-      badge: "/logo.jpg",
-      tag: tag || "zohour-msg",
-      data: { url: url || "/" },
-      lang: "ar",
-      dir: "rtl",
-      vibrate: [120, 60, 120],
-    });
+// ────────────────────────────────────────
+// Background Sync — retry queued push requests when internet returns
+// ────────────────────────────────────────
+
+function openQueueDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("zohoQueue", 1);
+    req.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore("pushQueue", { keyPath: "id", autoIncrement: true });
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function processOfflineQueue() {
+  let db;
+  try {
+    db = await openQueueDB();
+  } catch {
+    return;
+  }
+
+  const tx = db.transaction("pushQueue", "readwrite");
+  const store = tx.objectStore("pushQueue");
+
+  const all = await new Promise((resolve) => {
+    const req = store.getAll();
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = () => resolve([]);
+  });
+
+  for (const item of all) {
+    try {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item.payload),
+      });
+      store.delete(item.id);
+    } catch {
+      // Keep in queue if still offline
+    }
+  }
+
+  return new Promise((resolve) => { tx.oncomplete = resolve; tx.onerror = resolve; });
+}
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "retry-push") {
+    event.waitUntil(processOfflineQueue());
   }
 });
+
+// ────────────────────────────────────────
+// Notification click handler
+// ────────────────────────────────────────
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

@@ -47,88 +47,83 @@
 }
 
 /* ==============================
-   MINIMAL PALETTE
-   - Deep Navy (#0A192F) as the single brand color
-   - Off-white surfaces, subtle grays
-   - One soft accent (warm sand) used sparingly
+   ZOHOUR HANDBALL PALETTE
+   Light: clean white + deep navy
+   Dark:  rich midnight + bright blue accent
    ============================== */
 
 /* LIGHT MODE */
 :root {
-  --background: 210 33% 98%;
-  --foreground: 216 65% 11%;
-  --border: 216 16% 90%;
+  --background: 220 30% 97%;
+  --foreground: 220 60% 10%;
+  --border: 220 20% 88%;
 
   --card: 0 0% 100%;
-  --card-foreground: 216 65% 11%;
-  --card-border: 216 16% 90%;
+  --card-foreground: 220 60% 10%;
+  --card-border: 220 20% 90%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 216 65% 11%;
-  --popover-border: 216 16% 90%;
+  --popover-foreground: 220 60% 10%;
+  --popover-border: 220 20% 90%;
 
-  --primary: 216 65% 13%;
-  --primary-foreground: 210 33% 98%;
+  --primary: 220 70% 20%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 216 30% 25%;
+  --secondary: 220 35% 30%;
   --secondary-foreground: 0 0% 100%;
 
-  --muted: 216 16% 95%;
-  --muted-foreground: 216 12% 45%;
+  --muted: 220 20% 93%;
+  --muted-foreground: 220 15% 45%;
 
-  --accent: 216 65% 13%;
+  --accent: 215 75% 35%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 51%;
+  --destructive: 4 75% 52%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 216 16% 90%;
-  --ring: 216 65% 13%;
+  --input: 220 20% 88%;
+  --ring: 220 70% 20%;
 
   --radius: 14px;
 
-  --chat-bg-own: 216 65% 13%;
-  --chat-text-own: 0 0% 100%;
-  --chat-bg-other: 0 0% 100%;
-  --chat-text-other: 216 65% 11%;
+  --success: 142 70% 40%;
+  --success-foreground: 0 0% 100%;
 }
 
 /* DARK MODE */
 .dark {
-  --background: 216 50% 6%;
-  --foreground: 210 33% 98%;
-  --border: 216 28% 16%;
+  --background: 222 45% 7%;
+  --foreground: 215 30% 96%;
+  --border: 220 30% 16%;
 
-  --card: 216 45% 9%;
-  --card-foreground: 210 33% 98%;
-  --card-border: 216 28% 16%;
+  --card: 222 40% 10%;
+  --card-foreground: 215 30% 96%;
+  --card-border: 220 30% 17%;
 
-  --popover: 216 45% 9%;
-  --popover-foreground: 210 33% 98%;
-  --popover-border: 216 28% 16%;
+  --popover: 222 40% 10%;
+  --popover-foreground: 215 30% 96%;
+  --popover-border: 220 30% 17%;
 
-  --primary: 210 33% 98%;
-  --primary-foreground: 216 65% 11%;
+  --primary: 210 90% 62%;
+  --primary-foreground: 222 45% 7%;
 
-  --secondary: 216 28% 22%;
-  --secondary-foreground: 210 33% 98%;
+  --secondary: 220 30% 20%;
+  --secondary-foreground: 215 30% 96%;
 
-  --muted: 216 28% 14%;
-  --muted-foreground: 216 12% 65%;
+  --muted: 222 35% 14%;
+  --muted-foreground: 220 15% 62%;
 
-  --accent: 210 33% 98%;
-  --accent-foreground: 216 65% 11%;
+  --accent: 210 85% 65%;
+  --accent-foreground: 222 45% 7%;
 
-  --destructive: 0 70% 45%;
+  --destructive: 4 70% 48%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 216 28% 16%;
-  --ring: 210 33% 98%;
+  --input: 220 30% 16%;
+  --ring: 210 90% 62%;
 
-  --chat-bg-own: 210 33% 98%;
-  --chat-text-own: 216 65% 11%;
-  --chat-bg-other: 216 35% 14%;
-  --chat-text-other: 210 33% 98%;
+  --success: 142 60% 45%;
+  --success-foreground: 0 0% 100%;
 }
 
 @layer base {
@@ -144,14 +139,6 @@
   }
 }
 
-/* Chat dots pattern */
-.chat-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%230A192F' fill-opacity='0.04' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1.5'/%3E%3Ccircle cx='13' cy='13' r='1.5'/%3E%3C/g%3E%3C/svg%3E");
-}
-.dark .chat-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.04' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='1.5'/%3E%3Ccircle cx='13' cy='13' r='1.5'/%3E%3C/g%3E%3C/svg%3E");
-}
-
 /* Glass utility */
 .glass {
   @apply bg-background/85 backdrop-blur-xl border-b border-border;
@@ -164,4 +151,12 @@
 /* Smooth bottom-tab safe spacing */
 .has-bottom-tabs {
   padding-bottom: calc(80px + env(safe-area-inset-bottom));
+}
+
+/* Present badge */
+.badge-present {
+  @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+}
+.badge-absent {
+  @apply bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
 }

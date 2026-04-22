@@ -4,11 +4,47 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { db, messaging, VAPID_KEY } from "./firebase";
 
-let activeChatPath: string | null = null;
+const PUSH_QUEUE_KEY = "zohour_push_queue";
 
-export const setActiveChatPath = (path: string | null) => {
-  activeChatPath = path;
-};
+function getPushQueue(): any[] {
+  try {
+    return JSON.parse(localStorage.getItem(PUSH_QUEUE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function setPushQueue(q: any[]) {
+  try {
+    localStorage.setItem(PUSH_QUEUE_KEY, JSON.stringify(q));
+  } catch {}
+}
+
+async function flushPushQueue() {
+  const q = getPushQueue();
+  if (!q.length) return;
+  const remaining: any[] = [];
+  const base = (import.meta as any).env?.VITE_API_BASE_URL || "/api";
+  for (const payload of q) {
+    try {
+      await fetch(`${base}/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      remaining.push(payload);
+    }
+  }
+  setPushQueue(remaining);
+}
+
+// Flush queue when internet returns
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => {
+    flushPushQueue().catch(() => {});
+  });
+}
 
 let swReg: ServiceWorkerRegistration | null = null;
 
@@ -28,12 +64,6 @@ export async function ensureMessagingSW(): Promise<ServiceWorkerRegistration | n
 }
 
 export const ensureServiceWorker = ensureMessagingSW;
-
-export interface NotifyTarget {
-  uid: string;
-  role: "player" | "coach";
-  name: string;
-}
 
 async function saveFcmToken(uid: string, role: "player" | "coach", token: string) {
   try {
@@ -126,6 +156,8 @@ export function useNotifications() {
     if ("Notification" in window) setPermission(Notification.permission);
     ensureMessagingSW();
     setupForegroundListener();
+    // Flush any queued pushes on mount
+    if (navigator.onLine) flushPushQueue().catch(() => {});
   }, []);
 
   const requestPermission = useCallback(async () => {
@@ -137,51 +169,17 @@ export function useNotifications() {
   }, []);
 
   const notify = useCallback(
-    (
-      title: string,
-      options?: NotificationOptions & { chatPath?: string },
-    ) => {
-      // Don't toast if user is already viewing this chat in foreground
-      if (
-        options?.chatPath &&
-        activeChatPath === options.chatPath &&
-        !document.hidden
-      ) {
-        return;
-      }
-
-      // In-app toast for foreground notifications
+    (title: string, options?: { body?: string }) => {
       toast(title, { description: options?.body });
       playPing();
-
-      // Background tab fallback (no FCM): show a local notification
-      if (
-        permission === "granted" &&
-        (document.hidden || !document.hasFocus())
-      ) {
-        ensureMessagingSW().then((reg) => {
-          if (reg && reg.active) {
-            reg.active.postMessage({
-              type: "SHOW_NOTIFICATION",
-              payload: {
-                title,
-                body: options?.body,
-                tag: options?.chatPath || "zohour-msg",
-                url: "/",
-              },
-            });
-          }
-        });
-      }
     },
-    [permission],
+    [],
   );
 
   return { permission, requestPermission, notify };
 }
 
-// Trigger a server-side push to all relevant users via the api-server.
-// Falls back silently if the api-server is unreachable.
+// Trigger a server-side push (ratings only). Queues offline and retries when online.
 export async function broadcastPush(payload: {
   title: string;
   body: string;
@@ -190,15 +188,28 @@ export async function broadcastPush(payload: {
   scope?: "team" | "user";
   url?: string;
 }) {
+  const base = (import.meta as any).env?.VITE_API_BASE_URL || "/api";
+
+  if (navigator.onLine) {
+    await flushPushQueue().catch(() => {});
+  }
+
   try {
-    const base =
-      (import.meta as any).env?.VITE_API_BASE_URL || "/api";
     await fetch(`${base}/notify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-  } catch (e) {
-    // silent
+  } catch {
+    // Queue for retry when internet returns
+    const q = getPushQueue();
+    q.push(payload);
+    setPushQueue(q);
+    // Register background sync in SW if supported
+    ensureMessagingSW().then((reg) => {
+      if (reg && "sync" in (reg as any)) {
+        (reg as any).sync.register("retry-push").catch(() => {});
+      }
+    });
   }
 }
