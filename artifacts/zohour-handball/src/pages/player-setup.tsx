@@ -11,34 +11,37 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UserPlus } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Layout } from "@/components/layout";
 
 const setupSchema = z.object({
-  firstName: z.string().min(2, "الاسم الأول مطلوب"),
-  middleName: z.string().min(2, "اسم الأب مطلوب"),
-  lastName: z.string().min(2, "اللقب مطلوب"),
-  phone: z.string().min(10, "رقم الهاتف مطلوب"),
-  dob: z.string().refine((val) => {
-    const year = new Date(val).getFullYear();
-    return year >= 2008 && year <= 2013;
-  }, "يجب أن تكون سنة الميلاد بين 2008 و 2013"),
+  firstName: z.string().min(2, "مطلوب"),
+  fatherName: z.string().min(2, "مطلوب"),
+  grandfatherName: z.string().min(2, "مطلوب"),
+  phone: z.string().regex(/^\d{10,11}$/, "يجب أن يكون 10-11 رقماً"),
+  day: z.string().regex(/^(0?[1-9]|[12][0-9]|3[01])$/, "1-31"),
+  month: z.string().regex(/^(0?[1-9]|1[012])$/, "1-12"),
+  year: z.string().refine((val) => {
+    const y = parseInt(val);
+    return y >= 2008 && y <= 2013;
+  }, "2008 - 2013"),
 });
 
 export default function PlayerSetup() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof setupSchema>>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
       firstName: "",
-      middleName: "",
-      lastName: "",
+      fatherName: "",
+      grandfatherName: "",
       phone: "",
-      dob: "",
+      day: "",
+      month: "",
+      year: "",
     },
   });
 
@@ -47,20 +50,24 @@ export default function PlayerSetup() {
     setIsLoading(true);
     
     try {
-      const fullName = `${data.firstName} ${data.middleName} ${data.lastName}`;
+      const fullName = `${data.firstName} ${data.fatherName} ${data.grandfatherName}`;
+      // Format as YYYY-MM-DD
+      const pad = (n: string) => n.padStart(2, '0');
+      const dob = `${data.year}-${pad(data.month)}-${pad(data.day)}`;
+
       await setDoc(doc(db, "players", user.uid), {
-        ...data,
+        firstName: data.firstName,
+        fatherName: data.fatherName,
+        grandfatherName: data.grandfatherName,
         fullName,
+        phone: data.phone,
+        dob,
         createdAt: serverTimestamp(),
       });
       
       setLocation("/player");
     } catch (error: any) {
-      toast({
-        title: "حدث خطأ",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("حدث خطأ", { description: error.message });
     } finally {
       setIsLoading(false);
     }
@@ -68,54 +75,66 @@ export default function PlayerSetup() {
 
   return (
     <Layout>
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-md mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-8 rounded-3xl shadow-xl shadow-blue-900/5 border border-slate-100"
+          className="bg-card p-6 md:p-8 rounded-2xl shadow-xl shadow-primary/5 border border-border"
         >
-          <div className="flex items-center gap-4 mb-8">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg shadow-blue-500/30 flex items-center justify-center">
-              <UserPlus className="w-7 h-7 text-white" />
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <UserPlus className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-slate-900">استكمال البيانات</h2>
-              <p className="text-slate-500">الرجاء إدخال بياناتك الشخصية كلاعب</p>
+              <h2 className="text-xl font-bold text-card-foreground">بيانات اللاعب</h2>
+              <p className="text-xs text-muted-foreground">أكمل بياناتك الشخصية للمتابعة</p>
             </div>
           </div>
 
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>الاسم الأول</Label>
-                <Input {...form.register("firstName")} className="bg-slate-50" />
-                {form.formState.errors.firstName && <p className="text-red-500 text-sm">{form.formState.errors.firstName.message}</p>}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">الاسم الأول</Label>
+                <Input {...form.register("firstName")} className="h-10 bg-muted/50 rounded-lg text-sm" />
+                {form.formState.errors.firstName && <p className="text-destructive text-[10px]">{form.formState.errors.firstName.message}</p>}
               </div>
-              <div className="space-y-2">
-                <Label>اسم الأب</Label>
-                <Input {...form.register("middleName")} className="bg-slate-50" />
-                {form.formState.errors.middleName && <p className="text-red-500 text-sm">{form.formState.errors.middleName.message}</p>}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">اسم الأب</Label>
+                <Input {...form.register("fatherName")} className="h-10 bg-muted/50 rounded-lg text-sm" />
+                {form.formState.errors.fatherName && <p className="text-destructive text-[10px]">{form.formState.errors.fatherName.message}</p>}
               </div>
-              <div className="space-y-2">
-                <Label>اللقب / العائلة</Label>
-                <Input {...form.register("lastName")} className="bg-slate-50" />
-                {form.formState.errors.lastName && <p className="text-red-500 text-sm">{form.formState.errors.lastName.message}</p>}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">اسم الجد</Label>
+                <Input {...form.register("grandfatherName")} className="h-10 bg-muted/50 rounded-lg text-sm" />
+                {form.formState.errors.grandfatherName && <p className="text-destructive text-[10px]">{form.formState.errors.grandfatherName.message}</p>}
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>رقم الهاتف</Label>
-              <Input type="tel" {...form.register("phone")} className="bg-slate-50 text-left" dir="ltr" />
-              {form.formState.errors.phone && <p className="text-red-500 text-sm">{form.formState.errors.phone.message}</p>}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">رقم الموبايل</Label>
+              <Input type="tel" {...form.register("phone")} className="h-10 bg-muted/50 rounded-lg text-sm text-left" dir="ltr" placeholder="01xxxxxxxxx" />
+              {form.formState.errors.phone && <p className="text-destructive text-[10px]">{form.formState.errors.phone.message}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label>تاريخ الميلاد</Label>
-              <Input type="date" {...form.register("dob")} className="bg-slate-50" />
-              {form.formState.errors.dob && <p className="text-red-500 text-sm">{form.formState.errors.dob.message}</p>}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">تاريخ الميلاد</Label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Input type="number" placeholder="اليوم" {...form.register("day")} className="h-10 bg-muted/50 rounded-lg text-sm text-center" />
+                  {form.formState.errors.day && <p className="text-destructive text-[10px] mt-1">{form.formState.errors.day.message}</p>}
+                </div>
+                <div>
+                  <Input type="number" placeholder="الشهر" {...form.register("month")} className="h-10 bg-muted/50 rounded-lg text-sm text-center" />
+                  {form.formState.errors.month && <p className="text-destructive text-[10px] mt-1">{form.formState.errors.month.message}</p>}
+                </div>
+                <div>
+                  <Input type="number" placeholder="السنة" {...form.register("year")} className="h-10 bg-muted/50 rounded-lg text-sm text-center" />
+                  {form.formState.errors.year && <p className="text-destructive text-[10px] mt-1">{form.formState.errors.year.message}</p>}
+                </div>
+              </div>
             </div>
 
-            <Button type="submit" className="w-full h-12 bg-blue-700 hover:bg-blue-800 text-md rounded-xl" disabled={isLoading}>
+            <Button type="submit" className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl mt-2" disabled={isLoading}>
               {isLoading ? "جاري الحفظ..." : "حفظ ومتابعة"}
             </Button>
           </form>

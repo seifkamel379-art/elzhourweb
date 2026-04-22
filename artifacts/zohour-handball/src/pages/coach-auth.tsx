@@ -8,24 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShieldCheck } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Layout } from "@/components/layout";
 
 export default function CoachAuth() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { toast } = useToast();
   const [password, setPassword] = useState("");
+  const [coachName, setCoachName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (password !== COACH_PASSWORD) {
-      toast({
-        title: "كلمة المرور غير صحيحة",
-        variant: "destructive",
-      });
+      toast.error("كلمة المرور غير صحيحة");
+      return;
+    }
+    
+    if (!coachName.trim()) {
+      toast.error("الرجاء إدخال اسم المدرب");
       return;
     }
 
@@ -35,16 +37,13 @@ export default function CoachAuth() {
     try {
       await setDoc(doc(db, "coaches", user.uid), {
         email: user.email,
+        name: coachName.trim(),
         createdAt: serverTimestamp(),
       });
       
       setLocation("/coach");
     } catch (error: any) {
-      toast({
-        title: "حدث خطأ",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("حدث خطأ", { description: error.message });
     } finally {
       setIsLoading(false);
     }
@@ -52,32 +51,43 @@ export default function CoachAuth() {
 
   return (
     <Layout>
-      <div className="max-w-md mx-auto mt-12">
+      <div className="max-w-sm mx-auto mt-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white p-8 rounded-3xl shadow-xl shadow-orange-900/5 border border-slate-100 text-center"
+          className="bg-card p-6 md:p-8 rounded-2xl shadow-xl shadow-accent/5 border border-border text-center"
         >
-          <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 shadow-lg shadow-orange-500/30 flex items-center justify-center mb-6">
-            <ShieldCheck className="w-10 h-10 text-white" />
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-accent/10 flex items-center justify-center mb-4">
+            <ShieldCheck className="w-8 h-8 text-accent" />
           </div>
           
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">صلاحية المدرب</h2>
-          <p className="text-slate-500 mb-8">أدخل كلمة المرور الإدارية للوصول إلى لوحة المدرب</p>
+          <h2 className="text-xl font-bold text-card-foreground mb-1">صلاحية المدرب</h2>
+          <p className="text-xs text-muted-foreground mb-6">أدخل اسمك وكلمة المرور الإدارية</p>
 
-          <form onSubmit={onSubmit} className="space-y-6">
-            <div className="space-y-2 text-right">
-              <Label>كلمة المرور الإدارية</Label>
+          <form onSubmit={onSubmit} className="space-y-5 text-right">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">اسم المدرب</Label>
+              <Input 
+                type="text" 
+                value={coachName} 
+                onChange={(e) => setCoachName(e.target.value)}
+                className="bg-muted/50 h-11 rounded-xl text-sm" 
+                placeholder="مثال: كابتن أحمد"
+              />
+            </div>
+            
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">كلمة المرور الإدارية</Label>
               <Input 
                 type="password" 
                 value={password} 
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-slate-50 h-12 text-center text-xl tracking-widest" 
+                className="bg-muted/50 h-11 text-center tracking-widest rounded-xl text-sm" 
                 dir="ltr"
               />
             </div>
 
-            <Button type="submit" className="w-full h-12 bg-orange-600 hover:bg-orange-700 text-md rounded-xl" disabled={isLoading}>
+            <Button type="submit" className="w-full h-11 bg-accent hover:bg-accent/90 text-accent-foreground text-sm font-bold rounded-xl mt-2" disabled={isLoading}>
               {isLoading ? "جاري التحقق..." : "دخول كمدرب"}
             </Button>
           </form>

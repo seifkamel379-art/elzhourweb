@@ -8,13 +8,14 @@ interface UserProfile {
   uid: string;
   email: string;
   role: "player" | "coach" | null;
+  name?: string;
   createdAt?: any;
 }
 
 interface PlayerProfile {
   firstName: string;
-  middleName: string;
-  lastName: string;
+  fatherName: string;
+  grandfatherName: string;
   fullName: string;
   phone: string;
   dob: string;
@@ -50,14 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPlayerData(null);
         setLoading(false);
         
-        // If not on a public route, redirect to root
         if (location !== "/" && !location.startsWith("/auth")) {
           setLocation("/");
         }
         return;
       }
 
-      // User exists, subscribe to their profile
       const userRef = doc(db, "users", firebaseUser.uid);
       const unsubUser = onSnapshot(userRef, (docSnap) => {
         if (docSnap.exists()) {
@@ -75,11 +74,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
               setLoading(false);
             });
+          } else if (userData.role === "coach") {
+            const coachRef = doc(db, "coaches", firebaseUser.uid);
+            getDoc(coachRef).then((coachSnap) => {
+              if (coachSnap.exists()) {
+                setProfile(prev => prev ? { ...prev, name: coachSnap.data().name } : prev);
+                if (location !== "/coach") setLocation("/coach");
+              } else {
+                if (location !== "/coach-auth") setLocation("/coach-auth");
+              }
+              setPlayerData(null);
+              setLoading(false);
+            });
           } else {
             setPlayerData(null);
             setLoading(false);
-            if (userData.role === "coach" && location !== "/coach") {
-              setLocation("/coach");
+            if (location !== "/select-portal") {
+              setLocation("/select-portal");
             }
           }
         } else {
@@ -107,8 +118,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLocation("/player-setup");
       } else if (profile.role === "player" && playerData && location === "/") {
         setLocation("/player");
-      } else if (profile.role === "coach" && location === "/") {
+      } else if (profile.role === "coach" && profile.name && location === "/") {
         setLocation("/coach");
+      } else if (profile.role === "coach" && !profile.name && location !== "/coach-auth") {
+        setLocation("/coach-auth");
       }
     }
   }, [user, profile, playerData, loading, location, setLocation]);

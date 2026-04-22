@@ -4,26 +4,24 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, delete
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import { Layout } from "@/components/layout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Slider } from "@/components/ui/slider";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { format } from "date-fns";
-import { Users, ClipboardList, MessageSquare, Send, Trash2, Activity, Dumbbell, Brain, ChevronDown, ChevronUp } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Users, ChevronDown, ChevronUp, UserCircle2, Activity, Dumbbell, Brain } from "lucide-react";
+import { toast } from "sonner";
+import { Chat } from "@/components/chat";
+import { setActiveChatPath, useNotifications } from "@/lib/notifications";
 
 export default function CoachDashboard() {
-  const { user } = useAuth();
-  const { toast } = useToast();
+  const { user, profile } = useAuth();
+  const { notify } = useNotifications();
   
   const [players, setPlayers] = useState<any[]>([]);
   const [ratings, setRatings] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState("players");
+  const [activeTab, setActiveTab] = useState<"players" | "evaluations" | "chat">("players");
   const [selectedPlayer, setSelectedPlayer] = useState<any | null>(null);
   
   // Evaluation State
@@ -32,11 +30,9 @@ export default function CoachDashboard() {
   const [evalSaving, setEvalSaving] = useState<string | null>(null);
 
   // Chat State
-  const [activeChat, setActiveChat] = useState("team");
+  const [chatType, setChatType] = useState<"team" | string>("team");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState("");
 
-  // Fetch players and ratings
   useEffect(() => {
     const unsubPlayers = onSnapshot(collection(db, "players"), (snap) => {
       setPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -52,14 +48,35 @@ export default function CoachDashboard() {
     };
   }, []);
 
-  // Chat Listener
   useEffect(() => {
-    const path = activeChat === "team" ? "chats/team/messages" : `chats/coach_${activeChat}/messages`;
+    if (!user) return;
+    let path = "chats/team/messages";
+    if (chatType !== "team") {
+      path = `chats/coach_${user.uid}_player_${chatType}/messages`;
+    }
+
+    setActiveChatPath(path);
+
     const unsubChat = onSnapshot(query(collection(db, path), orderBy("createdAt", "asc")), (snap) => {
       setChatMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      snap.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const m = change.doc.data();
+          if (m.senderId !== user.uid && m.createdAt && Date.now() - m.createdAt.toMillis() < 10000) {
+            notify(`رسالة جديدة من ${m.senderName}`, {
+              body: m.text,
+              chatPath: path
+            });
+          }
+        }
+      });
     });
-    return () => unsubChat();
-  }, [activeChat]);
+    return () => {
+      unsubChat();
+      setActiveChatPath(null);
+    };
+  }, [chatType, user, notify]);
 
   const getPlayerRatings = (playerId: string) => ratings.filter(r => r.playerId === playerId);
   const getPlayerAverages = (playerId: string) => {
@@ -76,10 +93,7 @@ export default function CoachDashboard() {
   const handleEvalChange = (playerId: string, field: string, value: any) => {
     setEvalForms(prev => ({
       ...prev,
-      [playerId]: {
-        ...prev[playerId],
-        [field]: value
-      }
+      [playerId]: { ...prev[playerId], [field]: value }
     }));
   };
 
@@ -88,11 +102,10 @@ export default function CoachDashboard() {
       setEvalForms(prev => ({
         ...prev,
         [playerId]: {
-          physical: 5,
-          skill: 5,
-          general: 5,
-          notes: "",
-          date: format(new Date(), "yyyy-MM-dd")
+          physical: 0, skill: 0, general: 0, notes: "",
+          d: format(new Date(), "dd"),
+          m: format(new Date(), "MM"),
+          y: format(new Date(), "yyyy")
         }
       }));
     }
@@ -111,207 +124,181 @@ export default function CoachDashboard() {
     if (!user) return;
     const data = evalForms[playerId];
     if (!data) return;
+    
+    if (!data.physical || !data.skill || !data.general) {
+      toast.error("الرجاء استكمال جميع التقييمات");
+      return;
+    }
 
     setEvalSaving(playerId);
     try {
+      const pad = (n: string) => n.padStart(2, '0');
+      const date = `${data.y}-${pad(data.m)}-${pad(data.d)}`;
+
       await addDoc(collection(db, "ratings"), {
         playerId,
         playerName,
         coachId: user.uid,
-        date: data.date || format(new Date(), "yyyy-MM-dd"),
-        physical: data.physical || 0,
-        skill: data.skill || 0,
-        general: data.general || 0,
+        coachName: profile?.name || "المدرب",
+        date,
+        physical: data.physical,
+        skill: data.skill,
+        general: data.general,
         notes: data.notes || "",
         createdAt: serverTimestamp()
       });
       
-      toast({ title: "تم الحفظ", description: "تم حفظ التقييم بنجاح." });
+      toast.success("تم حفظ التقييم بنجاح");
       setExpandedEval(null);
     } catch (error: any) {
-      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+      toast.error("خطأ", { description: error.message });
     } finally {
       setEvalSaving(null);
     }
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !user) return;
-
-    const path = activeChat === "team" ? "chats/team/messages" : `chats/coach_${activeChat}/messages`;
-    
+  const sendMessage = async (text: string) => {
+    if (!user) return;
+    const path = chatType === "team" ? "chats/team/messages" : `chats/coach_${user.uid}_player_${chatType}/messages`;
     await addDoc(collection(db, path), {
       senderId: user.uid,
-      senderName: "المدرب",
+      senderName: profile?.name || "المدرب",
       senderRole: "coach",
-      text: newMessage,
+      text,
       createdAt: serverTimestamp(),
     });
-    
-    setNewMessage("");
   };
 
-  const deleteMessage = async (msgId: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذه الرسالة؟")) return;
-    const path = activeChat === "team" ? "chats/team/messages" : `chats/coach_${activeChat}/messages`;
-    try {
-      await deleteDoc(doc(db, path, msgId));
-    } catch (error) {
-      console.error("Error deleting message:", error);
-    }
-  };
+  const ScoreGrid = ({ value, onChange, colorClass }: { value: number, onChange: (v: number) => void, colorClass: string }) => (
+    <div className="flex gap-1 flex-wrap" dir="ltr">
+      {[1,2,3,4,5,6,7,8,9,10].map(num => (
+        <button
+          key={num}
+          onClick={() => onChange(num)}
+          className={`w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all ${value === num ? colorClass + ' text-white scale-110 shadow-sm' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+        >
+          {num}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <Layout>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-8 bg-slate-100 p-1 rounded-2xl h-14">
-          <TabsTrigger value="players" className="rounded-xl h-full data-[state=active]:bg-white data-[state=active]:shadow-sm">اللاعبون</TabsTrigger>
-          <TabsTrigger value="evaluations" className="rounded-xl h-full data-[state=active]:bg-white data-[state=active]:shadow-sm">التقييم</TabsTrigger>
-          <TabsTrigger value="chat" className="rounded-xl h-full data-[state=active]:bg-white data-[state=active]:shadow-sm">التواصل</TabsTrigger>
-        </TabsList>
+      <div className="flex bg-muted/50 p-1 rounded-2xl mb-6 relative">
+        {[
+          { id: "players", label: "اللاعبون" },
+          { id: "evaluations", label: "التقييم" },
+          { id: "chat", label: "التواصل" }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex-1 py-2.5 text-sm font-bold rounded-xl relative z-10 transition-colors ${activeTab === tab.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {tab.label}
+            {activeTab === tab.id && (
+              <motion.div layoutId="coach-tab-bg" className="absolute inset-0 bg-background rounded-xl shadow-sm -z-10" />
+            )}
+          </button>
+        ))}
+      </div>
 
+      <AnimatePresence mode="wait">
         {/* PLAYERS TAB */}
-        <TabsContent value="players" className="space-y-6 focus:outline-none">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {activeTab === "players" && (
+          <motion.div key="players" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {players.map((player, i) => {
               const avg = getPlayerAverages(player.id);
               return (
-                <motion.div key={player.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                  <Card className="border-0 shadow-xl shadow-blue-900/5 hover:shadow-2xl hover:shadow-blue-900/10 transition-all cursor-pointer group" onClick={() => setSelectedPlayer(player)}>
-                    <CardContent className="p-6">
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 shadow-lg shadow-blue-500/30 flex items-center justify-center text-white text-2xl font-bold group-hover:scale-105 transition-transform">
-                          {getInitialAvatar(player.firstName)}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-lg text-slate-800">{player.firstName} {player.lastName}</h3>
-                          <div className="text-sm text-slate-500">{player.phone}</div>
-                        </div>
+                <Card key={player.id} className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer bg-card" onClick={() => setSelectedPlayer(player)}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-lg font-bold">
+                        {getInitialAvatar(player.firstName)}
                       </div>
-                      
-                      <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center">
-                        <span className="text-slate-600 font-medium">المتوسط العام</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center font-bold text-blue-600 text-lg">
-                            {avg.t}
-                          </div>
-                          <span className="text-slate-400 text-sm">/10</span>
-                        </div>
+                      <div>
+                        <h3 className="font-bold text-sm text-foreground">{player.firstName} {player.lastName}</h3>
+                        <div className="text-[10px] text-muted-foreground" dir="ltr">{player.phone}</div>
                       </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                    </div>
+                    <div className="bg-muted p-2 rounded-lg flex justify-between items-center mt-2">
+                      <span className="text-xs font-semibold text-muted-foreground">المتوسط العام</span>
+                      <div className="font-bold text-primary text-sm bg-background px-2 py-0.5 rounded shadow-sm">
+                        {avg.t}<span className="text-[10px] text-muted-foreground ml-0.5">/10</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               );
             })}
-          </div>
-        </TabsContent>
+          </motion.div>
+        )}
 
         {/* EVALUATIONS TAB */}
-        <TabsContent value="evaluations" className="space-y-4 focus:outline-none">
-          <div className="bg-white rounded-3xl shadow-xl shadow-slate-900/5 border border-slate-100 overflow-hidden">
-            {players.map((player, i) => {
+        {activeTab === "evaluations" && (
+          <motion.div key="evaluations" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-3">
+            {players.map((player) => {
               const isExpanded = expandedEval === player.id;
               const avg = getPlayerAverages(player.id);
               const formData = evalForms[player.id] || {};
               
               return (
-                <div key={player.id} className={`border-b last:border-0 ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}>
-                  <div 
-                    className="p-4 md:p-6 flex items-center justify-between cursor-pointer"
-                    onClick={() => toggleEval(player.id)}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 shadow-md flex items-center justify-center text-white font-bold">
+                <div key={player.id} className={`bg-card border border-border/50 rounded-2xl overflow-hidden shadow-sm transition-colors ${isExpanded ? 'ring-1 ring-primary/20' : ''}`}>
+                  <div className="p-4 flex items-center justify-between cursor-pointer" onClick={() => toggleEval(player.id)}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
                         {getInitialAvatar(player.firstName)}
                       </div>
                       <div>
-                        <div className="font-bold text-slate-800">{player.firstName} {player.lastName}</div>
-                        <div className="text-xs text-slate-500">متوسط: {avg.t}/10</div>
+                        <div className="font-bold text-sm text-foreground">{player.firstName} {player.lastName}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">متوسط: {avg.t}/10</div>
                       </div>
                     </div>
-                    <div>
-                      {isExpanded ? <ChevronUp className="text-slate-400" /> : <ChevronDown className="text-slate-400" />}
+                    <div className="w-8 h-8 flex items-center justify-center bg-muted rounded-full text-muted-foreground">
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </div>
                   </div>
                   
                   <AnimatePresence>
                     {isExpanded && (
-                      <motion.div 
-                        initial={{ height: 0, opacity: 0 }} 
-                        animate={{ height: "auto", opacity: 1 }} 
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="p-6 pt-0 border-t border-slate-100 bg-white m-4 mt-0 rounded-2xl shadow-sm">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
-                            <div className="space-y-6">
-                              <div className="space-y-4">
-                                <div className="flex justify-between">
-                                  <Label className="text-blue-600 font-bold flex items-center gap-2"><Activity className="w-4 h-4"/> تقييم بدني</Label>
-                                  <span className="font-bold">{formData.physical || 0}/10</span>
-                                </div>
-                                <Slider 
-                                  value={[formData.physical || 0]} 
-                                  max={10} step={1} 
-                                  onValueChange={(v) => handleEvalChange(player.id, "physical", v[0])}
-                                  className="py-4"
-                                />
-                              </div>
-                              
-                              <div className="space-y-4">
-                                <div className="flex justify-between">
-                                  <Label className="text-orange-600 font-bold flex items-center gap-2"><Dumbbell className="w-4 h-4"/> تقييم مهاري</Label>
-                                  <span className="font-bold">{formData.skill || 0}/10</span>
-                                </div>
-                                <Slider 
-                                  value={[formData.skill || 0]} 
-                                  max={10} step={1} 
-                                  onValueChange={(v) => handleEvalChange(player.id, "skill", v[0])}
-                                  className="py-4"
-                                />
-                              </div>
-                              
-                              <div className="space-y-4">
-                                <div className="flex justify-between">
-                                  <Label className="text-green-600 font-bold flex items-center gap-2"><Brain className="w-4 h-4"/> تقييم عام</Label>
-                                  <span className="font-bold">{formData.general || 0}/10</span>
-                                </div>
-                                <Slider 
-                                  value={[formData.general || 0]} 
-                                  max={10} step={1} 
-                                  onValueChange={(v) => handleEvalChange(player.id, "general", v[0])}
-                                  className="py-4"
-                                />
-                              </div>
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                        <div className="p-4 pt-0 border-t border-border/50 bg-card/50">
+                          <div className="mt-4 space-y-5">
+                            
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold flex items-center gap-1.5 text-primary"><Activity className="w-3.5 h-3.5"/> التقييم البدني</Label>
+                              <ScoreGrid value={formData.physical} onChange={(v) => handleEvalChange(player.id, "physical", v)} colorClass="bg-primary" />
                             </div>
                             
-                            <div className="space-y-4">
-                              <div className="space-y-2">
-                                <Label>تاريخ التقييم</Label>
-                                <Input 
-                                  type="date" 
-                                  value={formData.date || ""} 
-                                  onChange={(e) => handleEvalChange(player.id, "date", e.target.value)} 
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>ملاحظات المدرب</Label>
-                                <Textarea 
-                                  placeholder="ملاحظات حول أداء اللاعب..." 
-                                  className="h-32 resize-none"
-                                  value={formData.notes || ""}
-                                  onChange={(e) => handleEvalChange(player.id, "notes", e.target.value)}
-                                />
-                              </div>
-                              <Button 
-                                onClick={() => submitEval(player.id, player.fullName)} 
-                                className="w-full bg-blue-600 hover:bg-blue-700 h-12 rounded-xl mt-4"
-                                disabled={evalSaving === player.id}
-                              >
-                                {evalSaving === player.id ? "جاري الحفظ..." : "حفظ التقييم"}
-                              </Button>
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold flex items-center gap-1.5 text-accent"><Dumbbell className="w-3.5 h-3.5"/> التقييم المهاري</Label>
+                              <ScoreGrid value={formData.skill} onChange={(v) => handleEvalChange(player.id, "skill", v)} colorClass="bg-accent" />
                             </div>
+                            
+                            <div className="space-y-2">
+                              <Label className="text-xs font-bold flex items-center gap-1.5 text-secondary"><Brain className="w-3.5 h-3.5"/> التقييم العام</Label>
+                              <ScoreGrid value={formData.general} onChange={(v) => handleEvalChange(player.id, "general", v)} colorClass="bg-secondary" />
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs font-bold">تاريخ التقييم</Label>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <Input type="number" placeholder="اليوم" value={formData.d} onChange={e => handleEvalChange(player.id, "d", e.target.value)} className="h-9 text-xs text-center bg-muted/50" />
+                                  <Input type="number" placeholder="الشهر" value={formData.m} onChange={e => handleEvalChange(player.id, "m", e.target.value)} className="h-9 text-xs text-center bg-muted/50" />
+                                  <Input type="number" placeholder="السنة" value={formData.y} onChange={e => handleEvalChange(player.id, "y", e.target.value)} className="h-9 text-xs text-center bg-muted/50" />
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs font-bold">ملاحظات المدرب</Label>
+                                <Textarea placeholder="ملاحظات..." value={formData.notes} onChange={e => handleEvalChange(player.id, "notes", e.target.value)} className="h-20 resize-none text-xs bg-muted/50" />
+                              </div>
+                            </div>
+
+                            <Button onClick={() => submitEval(player.id, player.fullName)} className="w-full bg-primary hover:bg-primary/90 h-10 rounded-xl text-sm font-bold" disabled={evalSaving === player.id}>
+                              {evalSaving === player.id ? "جاري الحفظ..." : "حفظ التقييم"}
+                            </Button>
                           </div>
                         </div>
                       </motion.div>
@@ -320,165 +307,117 @@ export default function CoachDashboard() {
                 </div>
               );
             })}
-          </div>
-        </TabsContent>
+          </motion.div>
+        )}
 
         {/* CHAT TAB */}
-        <TabsContent value="chat" className="focus:outline-none h-[600px]">
-          <div className="bg-white rounded-3xl shadow-xl shadow-slate-900/5 border border-slate-100 flex flex-col md:flex-row h-full overflow-hidden">
+        {activeTab === "chat" && (
+          <motion.div key="chat" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="h-[600px] flex flex-col md:flex-row gap-4">
             
-            {/* Sidebar */}
-            <div className="w-full md:w-80 border-l border-slate-100 flex flex-col bg-slate-50/50">
-              <div className="p-4 border-b border-slate-200">
-                <h3 className="font-bold text-slate-800">المحادثات</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {/* Sidebar List */}
+            <div className="w-full md:w-64 flex flex-col gap-2 shrink-0 md:h-full overflow-y-auto pb-2 md:pb-0 scrollbar-none snap-x md:snap-none">
+              <button 
+                onClick={() => setChatType("team")}
+                className={`flex items-center gap-3 p-3 rounded-xl transition-all text-right shrink-0 snap-start w-64 md:w-full border ${chatType === "team" ? "bg-primary text-primary-foreground border-transparent shadow-md" : "bg-card border-border hover:bg-muted text-foreground"}`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${chatType === "team" ? "bg-white/20 text-white" : "bg-primary/10 text-primary"}`}>
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm">شات الفريق العام</div>
+                </div>
+              </button>
+              
+              <div className="text-[10px] font-bold text-muted-foreground px-2 pt-2 hidden md:block">محادثات اللاعبين</div>
+              
+              {players.map(p => (
                 <button 
-                  onClick={() => setActiveChat("team")}
-                  className={`w-full text-right p-3 rounded-xl flex items-center gap-3 transition-colors ${activeChat === "team" ? "bg-blue-100 text-blue-800 font-bold" : "hover:bg-slate-100 text-slate-700"}`}
+                  key={p.id}
+                  onClick={() => setChatType(p.id)}
+                  className={`flex items-center gap-3 p-3 rounded-xl transition-all text-right shrink-0 snap-start w-64 md:w-full border ${chatType === p.id ? "bg-accent text-accent-foreground border-transparent shadow-md" : "bg-card border-border hover:bg-muted text-foreground"}`}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${activeChat === 'team' ? 'bg-blue-600' : 'bg-slate-400'}`}>
-                    <Users className="w-5 h-5" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold ${chatType === p.id ? "bg-white/20 text-white" : "bg-accent/10 text-accent"}`}>
+                    {getInitialAvatar(p.firstName)}
                   </div>
-                  <span>شات الفريق العام</span>
+                  <div className="truncate">
+                    <div className="font-bold text-sm truncate">{p.firstName} {p.lastName}</div>
+                  </div>
                 </button>
-                
-                <div className="pt-4 pb-2 px-3 text-xs font-bold text-slate-400">رسائل خاصة</div>
-                
-                {players.map(p => (
-                  <button 
-                    key={p.id}
-                    onClick={() => setActiveChat(p.id)}
-                    className={`w-full text-right p-3 rounded-xl flex items-center gap-3 transition-colors ${activeChat === p.id ? "bg-blue-100 text-blue-800 font-bold" : "hover:bg-slate-100 text-slate-700"}`}
-                  >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold ${activeChat === p.id ? 'bg-blue-600' : 'bg-slate-400'}`}>
-                      {getInitialAvatar(p.firstName)}
-                    </div>
-                    <span>{p.firstName} {p.lastName}</span>
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
 
             {/* Chat Area */}
-            <div className="flex-1 flex flex-col bg-white">
-              <div className="p-4 border-b border-slate-100 bg-white">
-                <h3 className="font-bold text-slate-800">
-                  {activeChat === "team" ? "شات الفريق العام" : players.find(p => p.id === activeChat)?.fullName || "محادثة"}
+            <div className="flex-1 min-h-0 bg-card rounded-2xl border border-border shadow-sm overflow-hidden flex flex-col">
+              <div className="p-3 md:p-4 border-b border-border bg-muted/30">
+                <h3 className="font-bold text-sm text-foreground">
+                  {chatType === "team" ? "شات الفريق العام" : players.find(p => p.id === chatType)?.fullName}
                 </h3>
               </div>
-              
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
-                {chatMessages.map((msg) => {
-                  const isMe = msg.senderId === user?.uid;
-                  return (
-                    <div key={msg.id} className={`flex gap-3 max-w-[80%] group ${isMe ? "mr-auto flex-row-reverse" : "ml-auto"}`}>
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0 font-bold ${msg.senderRole === 'coach' ? 'bg-gradient-to-br from-orange-500 to-red-600' : 'bg-gradient-to-br from-blue-400 to-blue-600'}`}>
-                        {getInitialAvatar(msg.senderName || "م")}
-                      </div>
-                      <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                        <div className="flex items-center gap-2 mb-1 px-1">
-                          <span className="text-xs text-slate-500">{msg.senderName} {msg.senderRole === 'coach' && '(أنا)'}</span>
-                          <button onClick={() => deleteMessage(msg.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <div className={`px-4 py-3 rounded-2xl ${isMe ? "bg-blue-600 text-white rounded-tl-none shadow-md shadow-blue-500/20" : "bg-white border text-slate-800 rounded-tr-none shadow-sm"}`}>
-                          {msg.text}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {chatMessages.length === 0 && (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50">
-                    <MessageSquare className="w-16 h-16 mb-4" />
-                    <p>لا توجد رسائل حتى الآن</p>
-                  </div>
-                )}
-              </div>
-              
-              <div className="p-4 border-t bg-white">
-                <form onSubmit={sendMessage} className="flex gap-2">
-                  <Input 
-                    value={newMessage} 
-                    onChange={(e) => setNewMessage(e.target.value)} 
-                    placeholder="اكتب رسالتك هنا..." 
-                    className="flex-1 h-12 bg-slate-50 border-slate-200 focus-visible:ring-blue-500 rounded-xl"
-                  />
-                  <Button type="submit" size="icon" className="h-12 w-12 rounded-xl bg-blue-600 hover:bg-blue-700 shrink-0">
-                    <Send className="w-5 h-5 rtl:-scale-x-100" />
-                  </Button>
-                </form>
+              <div className="flex-1 min-h-0">
+                <Chat messages={chatMessages} currentUserId={user?.uid || ""} onSendMessage={sendMessage} />
               </div>
             </div>
             
-          </div>
-        </TabsContent>
-      </Tabs>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* PLAYER DETAILS MODAL */}
-      <Dialog open={!!selectedPlayer} onOpenChange={(o) => !o && setSelectedPlayer(null)}>
-        <DialogContent className="max-w-3xl">
-          {selectedPlayer && (() => {
-            const pRatings = getPlayerRatings(selectedPlayer.id);
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-4 text-2xl pb-4 border-b">
-                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 shadow-md flex items-center justify-center text-white font-bold">
-                      {getInitialAvatar(selectedPlayer.firstName)}
-                    </div>
-                    <div>
-                      <div>{selectedPlayer.fullName}</div>
-                      <div className="text-sm font-normal text-slate-500 mt-1">تاريخ الميلاد: {selectedPlayer.dob} • هاتف: <span dir="ltr">{selectedPlayer.phone}</span></div>
-                    </div>
-                  </DialogTitle>
-                </DialogHeader>
-                
-                <div className="py-4 space-y-8">
-                  <Card className="border-0 shadow-xl shadow-slate-900/5">
-                    <CardHeader>
-                      <CardTitle>التطور عبر الزمن</CardTitle>
-                    </CardHeader>
-                    <CardContent className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={pRatings} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), "MM/dd")} axisLine={false} tickLine={false} />
-                          <YAxis domain={[0, 10]} axisLine={false} tickLine={false} />
-                          <RechartsTooltip />
-                          <Line type="monotone" dataKey="physical" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4 }} name="بدني" />
-                          <Line type="monotone" dataKey="skill" stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} name="مهاري" />
-                          <Line type="monotone" dataKey="general" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} name="عام" />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-
-                  <div className="space-y-4 max-h-64 overflow-y-auto px-2">
-                    <h3 className="font-bold text-slate-800">سجل التقييمات</h3>
-                    {pRatings.slice().reverse().map((r, i) => (
-                      <div key={r.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col md:flex-row gap-4 justify-between">
+      {/* PLAYER MODAL FOR PREVIOUS EVALS */}
+      {selectedPlayer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" onClick={() => setSelectedPlayer(null)}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-card w-full max-w-2xl rounded-3xl shadow-2xl border border-border overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-border/50 flex items-center gap-4 bg-muted/30">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">
+                {getInitialAvatar(selectedPlayer.firstName)}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">{selectedPlayer.fullName}</h2>
+                <div className="text-xs text-muted-foreground mt-1">تاريخ الميلاد: {selectedPlayer.dob} • هاتف: <span dir="ltr">{selectedPlayer.phone}</span></div>
+              </div>
+            </div>
+            <div className="p-5 max-h-[60vh] overflow-y-auto space-y-6">
+              {getPlayerRatings(selectedPlayer.id).length > 0 ? (
+                <>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={getPlayerRatings(selectedPlayer.id)} margin={{ top: 5, right: 0, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
+                        <XAxis dataKey="date" tickFormatter={(val) => format(new Date(val), "MM/dd")} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} dy={10} />
+                        <YAxis domain={[0, 10]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} dx={-10} width={20} />
+                        <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Line type="monotone" dataKey="physical" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} name="بدني" />
+                        <Line type="monotone" dataKey="skill" stroke="hsl(var(--accent))" strokeWidth={2} dot={{ r: 3 }} name="مهاري" />
+                        <Line type="monotone" dataKey="general" stroke="hsl(var(--secondary))" strokeWidth={2} dot={{ r: 3 }} name="عام" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-foreground">سجل التقييمات</h3>
+                    {getPlayerRatings(selectedPlayer.id).slice().reverse().map(r => (
+                      <div key={r.id} className="bg-muted/30 p-3 rounded-xl border border-border/50 text-sm flex justify-between items-start gap-4">
                         <div>
-                          <div className="text-sm font-bold text-slate-700">{format(new Date(r.date), "yyyy/MM/dd")}</div>
-                          {r.notes && <div className="text-sm text-slate-600 mt-1">{r.notes}</div>}
+                          <div className="font-bold text-xs text-muted-foreground">{format(new Date(r.date), "yyyy/MM/dd")}</div>
+                          {r.notes && <div className="mt-1 text-xs">{r.notes}</div>}
                         </div>
-                        <div className="flex gap-4 shrink-0">
-                          <div className="text-center"><div className="text-xs text-slate-400">بدني</div><div className="font-bold text-blue-600">{r.physical}</div></div>
-                          <div className="text-center"><div className="text-xs text-slate-400">مهاري</div><div className="font-bold text-orange-600">{r.skill}</div></div>
-                          <div className="text-center"><div className="text-xs text-slate-400">عام</div><div className="font-bold text-green-600">{r.general}</div></div>
+                        <div className="flex gap-2 text-center bg-background p-1.5 rounded-lg shrink-0 border border-border/50">
+                          <div className="px-1"><div className="text-[9px] text-muted-foreground">بدني</div><div className="font-bold text-primary">{r.physical}</div></div>
+                          <div className="px-1"><div className="text-[9px] text-muted-foreground">مهاري</div><div className="font-bold text-accent">{r.skill}</div></div>
+                          <div className="px-1"><div className="text-[9px] text-muted-foreground">عام</div><div className="font-bold text-secondary">{r.general}</div></div>
                         </div>
                       </div>
                     ))}
-                    {pRatings.length === 0 && <div className="text-center text-slate-500 py-4">لا توجد تقييمات</div>}
                   </div>
-                </div>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+                </>
+              ) : (
+                <div className="text-center text-muted-foreground text-sm py-10">لا توجد تقييمات مسجلة لهذا اللاعب</div>
+              )}
+            </div>
+            <div className="p-4 border-t border-border/50 bg-muted/30 text-left">
+              <Button onClick={() => setSelectedPlayer(null)} variant="outline" className="text-xs h-9 rounded-lg font-bold">إغلاق</Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </Layout>
   );
 }

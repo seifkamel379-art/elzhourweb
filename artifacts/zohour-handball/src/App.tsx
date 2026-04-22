@@ -1,9 +1,10 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { AuthProvider } from "@/lib/auth";
+import { ThemeProvider } from "@/components/theme-provider";
 
 import SplashLogin from "@/pages/splash-login";
 import SelectPortal from "@/pages/select-portal";
@@ -11,8 +12,24 @@ import PlayerSetup from "@/pages/player-setup";
 import CoachAuth from "@/pages/coach-auth";
 import PlayerDashboard from "@/pages/player-dashboard";
 import CoachDashboard from "@/pages/coach-dashboard";
+import { useNotifications } from "@/lib/notifications";
+import { useEffect } from "react";
 
 const queryClient = new QueryClient();
+
+function AppInit() {
+  const { requestPermission } = useNotifications();
+
+  useEffect(() => {
+    // Request after 5 seconds to let user settle
+    const t = setTimeout(() => {
+      requestPermission();
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [requestPermission]);
+
+  return null;
+}
 
 function Router() {
   return (
@@ -30,16 +47,19 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AuthProvider>
-            <Router />
-          </AuthProvider>
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ThemeProvider defaultTheme="dark" storageKey="app-theme">
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AuthProvider>
+              <AppInit />
+              <Router />
+            </AuthProvider>
+          </WouterRouter>
+          <Toaster dir="rtl" position="top-center" theme="system" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 
