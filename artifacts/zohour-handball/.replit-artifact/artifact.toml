@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "مركز شباب الزهور - كرة يد 2010"
+version = "1.0.0"
+id = "artifacts/zohour-handball"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23176
+
+[services.development]
+run = "pnpm --filter @workspace/zohour-handball run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/zohour-handball", "run", "build" ]
+publicDir = "artifacts/zohour-handball/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23176"
+BASE_PATH = "/"
