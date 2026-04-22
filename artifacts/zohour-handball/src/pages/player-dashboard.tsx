@@ -32,14 +32,19 @@ import {
   Activity,
   Dumbbell,
   Brain,
+  Sparkles,
   Users,
   MessageCircle,
   BarChart3,
-  UserCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
-import { Chat } from "@/components/chat";
-import { setActiveChatPath, useNotifications } from "@/lib/notifications";
+import { Chat, type ChatMessage } from "@/components/chat";
+import {
+  setActiveChatPath,
+  useNotifications,
+  registerFcmForUser,
+  broadcastPush,
+} from "@/lib/notifications";
 import { BottomTabs } from "@/components/bottom-tabs";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -52,7 +57,12 @@ export default function PlayerDashboard() {
   const [activeTab, setActiveTab] = useState<"ratings" | "chat">("ratings");
   const [chatType, setChatType] = useState<"team" | string>("team");
 
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // Register for push when the player logs in
+  useEffect(() => {
+    if (user) registerFcmForUser(user.uid, "player");
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -70,13 +80,8 @@ export default function PlayerDashboard() {
         snap.docChanges().forEach((change) => {
           if (change.type === "added") {
             const r = change.doc.data();
-            if (
-              r.createdAt &&
-              Date.now() - r.createdAt.toMillis() < 10000
-            ) {
-              notify(
-                `تم إضافة تقييم جديد من ${r.coachName || "المدرب"}`,
-              );
+            if (r.createdAt && Date.now() - r.createdAt.toMillis() < 10000) {
+              notify(`تم إضافة تقييم جديد من ${r.coachName || "المدرب"}`);
             }
           }
         });
@@ -114,7 +119,9 @@ export default function PlayerDashboard() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = snap.docs.map(
+          (d) => ({ id: d.id, ...d.data() }) as ChatMessage,
+        );
         setMessages(data);
 
         snap.docChanges().forEach((change) => {
@@ -146,19 +153,30 @@ export default function PlayerDashboard() {
 
   const latestRating = ratings.length > 0 ? ratings[ratings.length - 1] : null;
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, replyTo?: ChatMessage["replyTo"]) => {
     if (!user || !playerData) return;
     const path =
       chatType === "team"
         ? "chats/team/messages"
         : `chats/coach_${chatType}_player_${user.uid}/messages`;
+
     await addDoc(collection(db, path), {
       senderId: user.uid,
       senderName: playerData.firstName,
       senderRole: "player",
       senderPhotoURL: playerData.photoURL || null,
       text,
+      replyTo: replyTo || null,
       createdAt: serverTimestamp(),
+    });
+
+    // Trigger server-side push
+    broadcastPush({
+      title: `${playerData.firstName} في ${chatType === "team" ? "شات الفريق" : "محادثة خاصة"}`,
+      body: text,
+      excludeUid: user.uid,
+      scope: chatType === "team" ? "team" : "user",
+      recipients: chatType === "team" ? undefined : [{ uid: chatType, role: "coach" }],
     });
   };
 
@@ -191,57 +209,11 @@ export default function PlayerDashboard() {
             exit={{ opacity: 0, y: -10 }}
             className="space-y-5"
           >
-            <div className="grid grid-cols-3 gap-3">
-              <Card className="border border-border shadow-none bg-card">
-                <CardHeader className="pb-2 pt-3 px-3 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[11px] text-muted-foreground font-bold">
-                    بدني
-                  </CardTitle>
-                  <Activity className="w-4 h-4 text-primary" />
-                </CardHeader>
-                <CardContent className="px-3 pb-3">
-                  <div className="text-2xl font-extrabold">
-                    {latestRating?.physical || 0}
-                    <span className="text-xs text-muted-foreground/60">
-                      /10
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border shadow-none bg-card">
-                <CardHeader className="pb-2 pt-3 px-3 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[11px] text-muted-foreground font-bold">
-                    مهاري
-                  </CardTitle>
-                  <Dumbbell className="w-4 h-4 text-primary" />
-                </CardHeader>
-                <CardContent className="px-3 pb-3">
-                  <div className="text-2xl font-extrabold">
-                    {latestRating?.skill || 0}
-                    <span className="text-xs text-muted-foreground/60">
-                      /10
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-border shadow-none bg-card">
-                <CardHeader className="pb-2 pt-3 px-3 flex flex-row items-center justify-between">
-                  <CardTitle className="text-[11px] text-muted-foreground font-bold">
-                    عام
-                  </CardTitle>
-                  <Brain className="w-4 h-4 text-primary" />
-                </CardHeader>
-                <CardContent className="px-3 pb-3">
-                  <div className="text-2xl font-extrabold">
-                    {latestRating?.general || 0}
-                    <span className="text-xs text-muted-foreground/60">
-                      /10
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <ScoreCard label="بدني" value={latestRating?.physical} icon={Activity} />
+              <ScoreCard label="مهاري" value={latestRating?.skill} icon={Dumbbell} />
+              <ScoreCard label="عقلي" value={latestRating?.mental} icon={Brain} />
+              <ScoreCard label="عام" value={latestRating?.general} icon={Sparkles} />
             </div>
 
             <Card className="border border-border shadow-none bg-card">
@@ -267,20 +239,14 @@ export default function PlayerDashboard() {
                       tickFormatter={(val) => format(new Date(val), "MM/dd")}
                       axisLine={false}
                       tickLine={false}
-                      tick={{
-                        fontSize: 10,
-                        fill: "hsl(var(--muted-foreground))",
-                      }}
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                       dy={10}
                     />
                     <YAxis
                       domain={[0, 10]}
                       axisLine={false}
                       tickLine={false}
-                      tick={{
-                        fontSize: 10,
-                        fill: "hsl(var(--muted-foreground))",
-                      }}
+                      tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                       dx={-10}
                       width={20}
                     />
@@ -292,30 +258,10 @@ export default function PlayerDashboard() {
                         fontSize: "12px",
                       }}
                     />
-                    <Line
-                      type="monotone"
-                      dataKey="physical"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2.5}
-                      dot={{ r: 3 }}
-                      name="بدني"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="skill"
-                      stroke="hsl(var(--secondary))"
-                      strokeWidth={2.5}
-                      dot={{ r: 3 }}
-                      name="مهاري"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="general"
-                      stroke="hsl(var(--muted-foreground))"
-                      strokeWidth={2.5}
-                      dot={{ r: 3 }}
-                      name="عام"
-                    />
+                    <Line type="monotone" dataKey="physical" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} name="بدني" />
+                    <Line type="monotone" dataKey="skill" stroke="#1e88e5" strokeWidth={2.5} dot={{ r: 3 }} name="مهاري" />
+                    <Line type="monotone" dataKey="mental" stroke="#7b1fa2" strokeWidth={2.5} dot={{ r: 3 }} name="عقلي" />
+                    <Line type="monotone" dataKey="general" stroke="hsl(var(--muted-foreground))" strokeWidth={2.5} dot={{ r: 3 }} name="عام" />
                   </LineChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -347,31 +293,11 @@ export default function PlayerDashboard() {
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-3 text-center bg-muted/50 p-2 rounded-xl">
-                        <div>
-                          <div className="text-[10px] text-muted-foreground">
-                            بدني
-                          </div>
-                          <div className="font-extrabold text-primary text-sm">
-                            {r.physical}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-muted-foreground">
-                            مهاري
-                          </div>
-                          <div className="font-extrabold text-primary text-sm">
-                            {r.skill}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-muted-foreground">
-                            عام
-                          </div>
-                          <div className="font-extrabold text-primary text-sm">
-                            {r.general}
-                          </div>
-                        </div>
+                      <div className="grid grid-cols-4 gap-2 text-center bg-muted/50 p-2 rounded-xl">
+                        <ScorePill label="بدني" value={r.physical} />
+                        <ScorePill label="مهاري" value={r.skill} />
+                        <ScorePill label="عقلي" value={r.mental} />
+                        <ScorePill label="عام" value={r.general} />
                       </div>
                     </div>
                     {r.notes && (
@@ -440,5 +366,41 @@ export default function PlayerDashboard() {
         ]}
       />
     </Layout>
+  );
+}
+
+function ScoreCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value?: number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <Card className="border border-border shadow-none bg-card">
+      <CardHeader className="pb-2 pt-3 px-3 flex flex-row items-center justify-between">
+        <CardTitle className="text-[11px] text-muted-foreground font-bold">
+          {label}
+        </CardTitle>
+        <Icon className="w-4 h-4 text-primary" />
+      </CardHeader>
+      <CardContent className="px-3 pb-3">
+        <div className="text-2xl font-extrabold">
+          {value || 0}
+          <span className="text-xs text-muted-foreground/60">/10</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScorePill({ label, value }: { label: string; value?: number }) {
+  return (
+    <div className="px-1">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className="font-extrabold text-primary text-sm">{value || 0}</div>
+    </div>
   );
 }

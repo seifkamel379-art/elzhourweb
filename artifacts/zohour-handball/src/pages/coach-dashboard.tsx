@@ -12,10 +12,7 @@ import {
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import { Layout } from "@/components/layout";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -37,14 +34,17 @@ import {
   Activity,
   Dumbbell,
   Brain,
+  Sparkles,
   ClipboardList,
   MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Chat } from "@/components/chat";
+import { Chat, type ChatMessage } from "@/components/chat";
 import {
   setActiveChatPath,
   useNotifications,
+  registerFcmForUser,
+  broadcastPush,
 } from "@/lib/notifications";
 import { BottomTabs } from "@/components/bottom-tabs";
 import { UserAvatar } from "@/components/user-avatar";
@@ -65,7 +65,11 @@ export default function CoachDashboard() {
   const [evalSaving, setEvalSaving] = useState<string | null>(null);
 
   const [chatType, setChatType] = useState<"team" | string>("team");
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    if (user) registerFcmForUser(user.uid, "coach");
+  }, [user]);
 
   useEffect(() => {
     const unsubPlayers = onSnapshot(
@@ -109,7 +113,9 @@ export default function CoachDashboard() {
     const unsubChat = onSnapshot(
       query(collection(db, path), orderBy("createdAt", "asc")),
       (snap) => {
-        setChatMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setChatMessages(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ChatMessage),
+        );
 
         snap.docChanges().forEach((change) => {
           if (change.type === "added") {
@@ -141,11 +147,12 @@ export default function CoachDashboard() {
     ratings.filter((r) => r.playerId === playerId);
   const getPlayerAverages = (playerId: string) => {
     const pr = getPlayerRatings(playerId);
-    if (pr.length === 0) return { p: 0, s: 0, g: 0, t: 0 };
-    const p = Math.round(pr.reduce((a, b) => a + b.physical, 0) / pr.length);
-    const s = Math.round(pr.reduce((a, b) => a + b.skill, 0) / pr.length);
-    const g = Math.round(pr.reduce((a, b) => a + b.general, 0) / pr.length);
-    return { p, s, g, t: Math.round((p + s + g) / 3) };
+    if (pr.length === 0) return { p: 0, s: 0, m: 0, g: 0, t: 0 };
+    const p = Math.round(pr.reduce((a, b) => a + (b.physical || 0), 0) / pr.length);
+    const s = Math.round(pr.reduce((a, b) => a + (b.skill || 0), 0) / pr.length);
+    const m = Math.round(pr.reduce((a, b) => a + (b.mental || 0), 0) / pr.length);
+    const g = Math.round(pr.reduce((a, b) => a + (b.general || 0), 0) / pr.length);
+    return { p, s, m, g, t: Math.round((p + s + m + g) / 4) };
   };
 
   const handleEvalChange = (playerId: string, field: string, value: any) => {
@@ -162,6 +169,7 @@ export default function CoachDashboard() {
         [playerId]: {
           physical: 0,
           skill: 0,
+          mental: 0,
           general: 0,
           notes: "",
           d: format(new Date(), "dd"),
@@ -186,7 +194,7 @@ export default function CoachDashboard() {
     const data = evalForms[playerId];
     if (!data) return;
 
-    if (!data.physical || !data.skill || !data.general) {
+    if (!data.physical || !data.skill || !data.mental || !data.general) {
       toast.error("الرجاء استكمال جميع التقييمات");
       return;
     }
@@ -204,9 +212,18 @@ export default function CoachDashboard() {
         date,
         physical: data.physical,
         skill: data.skill,
+        mental: data.mental,
         general: data.general,
         notes: data.notes || "",
         createdAt: serverTimestamp(),
+      });
+
+      // Push to that player only
+      broadcastPush({
+        title: `تقييم جديد من ${profile?.name || "المدرب"}`,
+        body: `حصلت على بدني ${data.physical}، مهاري ${data.skill}، عقلي ${data.mental}، عام ${data.general}`,
+        recipients: [{ uid: playerId, role: "player" }],
+        scope: "user",
       });
 
       toast.success("تم حفظ التقييم بنجاح");
@@ -218,19 +235,34 @@ export default function CoachDashboard() {
     }
   };
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (
+    text: string,
+    replyTo?: ChatMessage["replyTo"],
+  ) => {
     if (!user) return;
     const path =
       chatType === "team"
         ? "chats/team/messages"
         : `chats/coach_${user.uid}_player_${chatType}/messages`;
+
     await addDoc(collection(db, path), {
       senderId: user.uid,
       senderName: profile?.name || "المدرب",
       senderRole: "coach",
       senderPhotoURL: profile?.photoURL || null,
       text,
+      replyTo: replyTo || null,
       createdAt: serverTimestamp(),
+    });
+
+    // Trigger server-side push
+    broadcastPush({
+      title: `${profile?.name || "المدرب"} في ${chatType === "team" ? "شات الفريق" : "محادثة خاصة"}`,
+      body: text,
+      excludeUid: user.uid,
+      scope: chatType === "team" ? "team" : "user",
+      recipients:
+        chatType === "team" ? undefined : [{ uid: chatType, role: "player" }],
     });
   };
 
@@ -259,7 +291,12 @@ export default function CoachDashboard() {
     <Layout withBottomTabs>
       {/* Coach Header */}
       <div className="bg-card border border-border rounded-3xl p-4 mb-5 flex items-center gap-3 shadow-sm">
-        <UserAvatar photoURL={profile?.photoURL} name={profile?.name} size={56} ring />
+        <UserAvatar
+          photoURL={profile?.photoURL}
+          name={profile?.name}
+          size={56}
+          ring
+        />
         <div className="flex-1 min-w-0">
           <h2 className="font-extrabold text-base text-foreground truncate">
             {profile?.name || "المدرب"}
@@ -304,7 +341,10 @@ export default function CoachDashboard() {
                         <h3 className="font-extrabold text-sm text-foreground truncate">
                           {player.firstName} {player.fatherName}
                         </h3>
-                        <div className="text-[10px] text-muted-foreground" dir="ltr">
+                        <div
+                          className="text-[10px] text-muted-foreground"
+                          dir="ltr"
+                        >
                           {player.phone}
                         </div>
                       </div>
@@ -417,7 +457,20 @@ export default function CoachDashboard() {
 
                             <div className="space-y-2">
                               <Label className="text-xs font-extrabold flex items-center gap-1.5 text-foreground">
-                                <Brain className="w-3.5 h-3.5" /> التقييم العام
+                                <Brain className="w-3.5 h-3.5" /> التقييم العقلي
+                              </Label>
+                              <ScoreGrid
+                                value={formData.mental}
+                                onChange={(v) =>
+                                  handleEvalChange(player.id, "mental", v)
+                                }
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs font-extrabold flex items-center gap-1.5 text-foreground">
+                                <Sparkles className="w-3.5 h-3.5" /> التقييم
+                                العام
                               </Label>
                               <ScoreGrid
                                 value={formData.general}
@@ -525,7 +578,6 @@ export default function CoachDashboard() {
             className="flex flex-col md:flex-row gap-3"
             style={{ height: "calc(100dvh - 240px)" }}
           >
-            {/* Chat list */}
             <div className="w-full md:w-64 flex md:flex-col gap-2 shrink-0 md:h-full overflow-y-auto pb-2 md:pb-0 scrollbar-none snap-x md:snap-none">
               <button
                 onClick={() => setChatType("team")}
@@ -566,7 +618,6 @@ export default function CoachDashboard() {
               ))}
             </div>
 
-            {/* Chat area */}
             <div className="flex-1 min-h-0 bg-card rounded-2xl border border-border overflow-hidden flex flex-col">
               <div className="p-3 border-b border-border bg-muted/30">
                 <h3 className="font-extrabold text-sm text-foreground">
@@ -661,30 +712,10 @@ export default function CoachDashboard() {
                             fontSize: "12px",
                           }}
                         />
-                        <Line
-                          type="monotone"
-                          dataKey="physical"
-                          stroke="hsl(var(--primary))"
-                          strokeWidth={2.5}
-                          dot={{ r: 3 }}
-                          name="بدني"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="skill"
-                          stroke="hsl(var(--secondary))"
-                          strokeWidth={2.5}
-                          dot={{ r: 3 }}
-                          name="مهاري"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="general"
-                          stroke="hsl(var(--muted-foreground))"
-                          strokeWidth={2.5}
-                          dot={{ r: 3 }}
-                          name="عام"
-                        />
+                        <Line type="monotone" dataKey="physical" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ r: 3 }} name="بدني" />
+                        <Line type="monotone" dataKey="skill" stroke="#1e88e5" strokeWidth={2.5} dot={{ r: 3 }} name="مهاري" />
+                        <Line type="monotone" dataKey="mental" stroke="#7b1fa2" strokeWidth={2.5} dot={{ r: 3 }} name="عقلي" />
+                        <Line type="monotone" dataKey="general" stroke="hsl(var(--muted-foreground))" strokeWidth={2.5} dot={{ r: 3 }} name="عام" />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -708,30 +739,22 @@ export default function CoachDashboard() {
                               <div className="mt-1 text-xs">{r.notes}</div>
                             )}
                           </div>
-                          <div className="flex gap-2 text-center bg-background p-1.5 rounded-lg shrink-0 border border-border">
+                          <div className="grid grid-cols-4 gap-2 text-center bg-background p-1.5 rounded-lg shrink-0 border border-border">
                             <div className="px-1">
-                              <div className="text-[9px] text-muted-foreground">
-                                بدني
-                              </div>
-                              <div className="font-extrabold text-primary">
-                                {r.physical}
-                              </div>
+                              <div className="text-[9px] text-muted-foreground">بدني</div>
+                              <div className="font-extrabold text-primary">{r.physical || 0}</div>
                             </div>
                             <div className="px-1">
-                              <div className="text-[9px] text-muted-foreground">
-                                مهاري
-                              </div>
-                              <div className="font-extrabold text-primary">
-                                {r.skill}
-                              </div>
+                              <div className="text-[9px] text-muted-foreground">مهاري</div>
+                              <div className="font-extrabold text-primary">{r.skill || 0}</div>
                             </div>
                             <div className="px-1">
-                              <div className="text-[9px] text-muted-foreground">
-                                عام
-                              </div>
-                              <div className="font-extrabold text-primary">
-                                {r.general}
-                              </div>
+                              <div className="text-[9px] text-muted-foreground">عقلي</div>
+                              <div className="font-extrabold text-primary">{r.mental || 0}</div>
+                            </div>
+                            <div className="px-1">
+                              <div className="text-[9px] text-muted-foreground">عام</div>
+                              <div className="font-extrabold text-primary">{r.general || 0}</div>
                             </div>
                           </div>
                         </div>

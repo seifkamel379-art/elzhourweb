@@ -1,6 +1,7 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, type Messaging } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBtiCT9zHkx28jGmggXLUpe5kuGoG5rNpw",
@@ -12,9 +13,24 @@ const firebaseConfig = {
   measurementId: "G-7PX0VWHGMD",
 };
 
-export const app = initializeApp(firebaseConfig);
+export const app: FirebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Web Push public key (VAPID)
+export const VAPID_KEY =
+  "BGyfR8zY2F1fsXTG7bMA9hPFIR7nW25HjaPwNPWlwyCpDgJBUwTt5eaw3CCsnu3v-iYEijw-OJ_OKNYauVqgD-Y";
+
+export let messaging: Messaging | null = null;
+try {
+  if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+    messaging = getMessaging(app);
+  }
+} catch (e) {
+  console.warn("Messaging init failed", e);
+}
+
+export const FIREBASE_CONFIG_PUBLIC = firebaseConfig;
 
 // Set persistence to local so users stay logged in
 setPersistence(auth, browserLocalPersistence).catch((err) => {
