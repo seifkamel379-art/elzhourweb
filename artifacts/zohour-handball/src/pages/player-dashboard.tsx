@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, FirestoreError } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import { Layout } from "@/components/layout";
@@ -25,9 +25,11 @@ export default function PlayerDashboard() {
   // Fetch ratings
   useEffect(() => {
     if (!user) return;
-    const qRatings = query(collection(db, "ratings"), where("playerId", "==", user.uid), orderBy("date", "asc"));
+    const qRatings = query(collection(db, "ratings"), where("playerId", "==", user.uid));
     const unsubRatings = onSnapshot(qRatings, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as any))
+        .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
       setRatings(data);
       // Notify if new rating comes in (hacky way: checking if latest is recent, but in reality we'd compare lengths)
       // Leaving out the complex logic for new rating notification to keep it simple, 
@@ -41,6 +43,8 @@ export default function PlayerDashboard() {
           }
         }
       });
+    }, (err: FirestoreError) => {
+      console.warn("Ratings listener error:", err.code);
     });
     return () => unsubRatings();
   }, [user, notify]);
@@ -49,6 +53,8 @@ export default function PlayerDashboard() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "coaches"), (snap) => {
       setCoaches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err: FirestoreError) => {
+      console.warn("Coaches listener error:", err.code);
     });
     return () => unsub();
   }, []);
@@ -70,6 +76,9 @@ export default function PlayerDashboard() {
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setMessages(data);
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      void 0;
       
       snap.docChanges().forEach((change) => {
         if (change.type === "added") {
@@ -82,6 +91,8 @@ export default function PlayerDashboard() {
           }
         }
       });
+    }, (err: FirestoreError) => {
+      console.warn("Chat listener error:", err.code);
     });
 
     return () => {

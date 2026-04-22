@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, FirestoreError } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import { Layout } from "@/components/layout";
@@ -36,10 +36,17 @@ export default function CoachDashboard() {
   useEffect(() => {
     const unsubPlayers = onSnapshot(collection(db, "players"), (snap) => {
       setPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err: FirestoreError) => {
+      console.warn("Players listener error:", err.code);
     });
 
-    const unsubRatings = onSnapshot(query(collection(db, "ratings"), orderBy("date", "asc")), (snap) => {
-      setRatings(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubRatings = onSnapshot(collection(db, "ratings"), (snap) => {
+      const data = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as any))
+        .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      setRatings(data);
+    }, (err: FirestoreError) => {
+      console.warn("Ratings listener error:", err.code);
     });
 
     return () => {
@@ -71,6 +78,8 @@ export default function CoachDashboard() {
           }
         }
       });
+    }, (err: FirestoreError) => {
+      console.warn("Chat listener error:", err.code);
     });
     return () => {
       unsubChat();

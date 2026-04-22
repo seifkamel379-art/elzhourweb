@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import IntroAnimation from "@/components/intro-animation";
+import { AmbientBackground } from "@/components/ambient-background";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -104,6 +105,7 @@ export default function SplashLogin() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center relative overflow-hidden">
+      <AmbientBackground />
       <AnimatePresence mode="wait">
         {showSplash && (
           <IntroAnimation key="intro" onComplete={handleSplashComplete} />
